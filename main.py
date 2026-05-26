@@ -265,9 +265,12 @@ class GitCopyTool(QWidget):
                 full_path = os.path.join(repo_path, filename)
                 
                 # 只列出文件（忽略纯目录的变更）
-                if os.path.isfile(full_path):
+                if os.path.isfile(full_path) or status[1] == 'D':
+                    # 将状态码转换为友好的中文标签
+                    status_label = self.get_status_label(status)
+                    
                     # 在界面上展示：[状态] 文件路径
-                    display_text = f"[{status}] {filename}"
+                    display_text = f"[{status_label}] {filename}"
                     item = QListWidgetItem(display_text)
                     item.setData(Qt.ItemDataRole.UserRole, filename) # 存储纯净的相对路径
                     
@@ -282,6 +285,24 @@ class GitCopyTool(QWidget):
             # 静默处理或打印错误
             print(f"扫描 Git 失败: {e}")
             self.update_count_label()
+
+    def get_status_label(self, status):
+        """将 git status --porcelain 的状态码转换为友好的中文标签"""
+        status_map = {
+            'M ': '已修改',
+            ' M': '已修改',
+            'A ': '已添加',
+            '??': '未跟踪',
+            'D ': '已删除',
+            ' D': '已删除',
+            'R ': '已重命名',
+            'C ': '已复制',
+            '!!': '已忽略',
+            'AM': '已添加',
+            'MM': '已修改',
+            'AD': '已添加',
+        }
+        return status_map.get(status, status)
 
     def show_context_menu(self, pos):
         # 响应右键，提供全选/反选操作
