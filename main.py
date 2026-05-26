@@ -5,7 +5,8 @@ import subprocess
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QListWidget, QListWidgetItem,
-    QFileDialog, QMessageBox, QMenu, QStyleFactory, QComboBox
+    QFileDialog, QMessageBox, QMenu, QStyleFactory, QComboBox,
+    QTreeWidget, QTreeWidgetItem, QStackedWidget, QToolButton
 )
 from PySide6.QtCore import Qt, QSize, QSettings
 from PySide6.QtGui import QAction, QFont, QIcon
@@ -48,6 +49,21 @@ class GitCopyTool(QWidget):
         list_header_layout = QHBoxLayout()
         self.list_label = QLabel("已改动的文件 (右键菜单可全选/反选):")
         
+        self.list_view_btn = QToolButton()
+        self.list_view_btn.setText("列表")
+        self.list_view_btn.setCheckable(True)
+        self.list_view_btn.setChecked(True)
+        self.list_view_btn.setFixedSize(40, 24)
+        self.list_view_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.list_view_btn.clicked.connect(lambda: self.switch_view(0))
+        
+        self.tree_view_btn = QToolButton()
+        self.tree_view_btn.setText("树形")
+        self.tree_view_btn.setCheckable(True)
+        self.tree_view_btn.setFixedSize(40, 24)
+        self.tree_view_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.tree_view_btn.clicked.connect(lambda: self.switch_view(1))
+        
         self.refresh_btn = QPushButton("刷新")
         self.refresh_btn.setFixedSize(60, 24)
         self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -58,19 +74,19 @@ class GitCopyTool(QWidget):
         
         list_header_layout.addWidget(self.list_label)
         list_header_layout.addStretch()
+        list_header_layout.addWidget(self.list_view_btn)
+        list_header_layout.addWidget(self.tree_view_btn)
         list_header_layout.addWidget(self.refresh_btn)
         list_header_layout.addWidget(self.count_label)
         
         layout.addLayout(list_header_layout)
 
+        self.stacked_widget = QStackedWidget()
+
         self.file_list = QListWidget()
-        # 允许通过右键呼出菜单
         self.file_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.file_list.customContextMenuRequested.connect(self.show_context_menu)
-        # 绑定点击复选框时的统计更新
         self.file_list.itemChanged.connect(self.update_count_label)
-        
-        # 增加内边距，使其不贴边，呈现现代感
         self.file_list.setStyleSheet("""
             QListWidget {
                 border: 1px solid #d1d5db;
@@ -90,7 +106,37 @@ class GitCopyTool(QWidget):
                 color: #111827;
             }
         """)
-        layout.addWidget(self.file_list)
+        self.stacked_widget.addWidget(self.file_list)
+
+        self.file_tree = QTreeWidget()
+        self.file_tree.setHeaderLabels(["文件路径", "状态"])
+        self.file_tree.setColumnCount(2)
+        self.file_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.file_tree.customContextMenuRequested.connect(self.show_context_menu)
+        self.file_tree.itemChanged.connect(self.on_tree_item_changed)
+        self.file_tree.setStyleSheet("""
+            QTreeWidget {
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+                padding: 8px;
+                background-color: #ffffff;
+            }
+            QTreeWidget::item {
+                padding: 4px;
+                border-radius: 4px;
+            }
+            QTreeWidget::item:hover {
+                background-color: #f3f4f6;
+            }
+            QTreeWidget::item:selected {
+                background-color: #e5e7eb;
+                color: #111827;
+            }
+        """)
+        self.file_tree.setColumnWidth(0, 400)
+        self.stacked_widget.addWidget(self.file_tree)
+
+        layout.addWidget(self.stacked_widget)
 
         # 3. 目标目录选择区
         tgt_layout = QHBoxLayout()
@@ -146,6 +192,11 @@ class GitCopyTool(QWidget):
         # 初始化配置并加载历史记录
         self.settings = QSettings("MyCompany", "GitCopyTool")
         self.load_history()
+
+    def switch_view(self, index):
+        self.stacked_widget.setCurrentIndex(index)
+        self.list_view_btn.setChecked(index == 0)
+        self.tree_view_btn.setChecked(index == 1)
 
     def load_history(self):
         src_history = self.settings.value("src_history", [])
@@ -204,10 +255,42 @@ class GitCopyTool(QWidget):
         self.tgt_input.setCurrentText(path)
         self.tgt_input.blockSignals(False)
 
+    def on_tree_item_changed(self, item, column):
+        self.file_tree.blockSignals(True)
+        self.propagate_check_to_children(item, item.checkState(0))
+        self.file_tree.blockSignals(False)
+        self.update_count_label()
+
+    def propagate_check_to_children(self, item, state):
+        for i in range(item.childCount()):
+            child = item.child(i)
+            child.setCheckState(0, state)
+            self.propagate_check_to_children(child, state)
+
     def update_count_label(self):
-        total = self.file_list.count()
-        selected = sum(1 for i in range(total) if self.file_list.item(i).checkState() == Qt.CheckState.Checked)
+        if self.stacked_widget.currentIndex() == 0:
+            total = self.file_list.count()
+            selected = sum(1 for i in range(total) if self.file_list.item(i).checkState() == Qt.CheckState.Checked)
+        else:
+            total, selected = self.count_tree_items()
         self.count_label.setText(f"已选: {selected} / {total}")
+
+    def count_tree_items(self):
+        total = 0
+        selected = 0
+        
+        def recurse(parent):
+            nonlocal total, selected
+            for i in range(parent.childCount()):
+                item = parent.child(i)
+                if item.childCount() == 0:
+                    total += 1
+                    if item.checkState(0) == Qt.CheckState.Checked:
+                        selected += 1
+                recurse(item)
+        
+        recurse(self.file_tree.invisibleRootItem())
+        return total, selected
 
     def browse_source(self):
         dir_path = QFileDialog.getExistingDirectory(self, "选择 Git 源目录")
@@ -222,6 +305,7 @@ class GitCopyTool(QWidget):
     def scan_git_files(self):
         repo_path = self.src_input.currentText().strip()
         self.file_list.clear()
+        self.file_tree.clear()
         
         if not repo_path or not os.path.isdir(repo_path):
             return
@@ -246,6 +330,8 @@ class GitCopyTool(QWidget):
                 creationflags=creationflags
             )
             
+            file_entries = []
+            
             lines = result.stdout.splitlines()
             for line in lines:
                 if len(line) < 4:
@@ -266,17 +352,21 @@ class GitCopyTool(QWidget):
                 
                 # 只列出文件（忽略纯目录的变更）
                 if os.path.isfile(full_path) or status[1] == 'D':
-                    # 将状态码转换为友好的中文标签
                     status_label = self.get_status_label(status)
+                    file_entries.append((filename, status_label))
+            
+            file_entries.sort(key=lambda x: x[0])
+            
+            for filename, status_label in file_entries:
+                display_text = f"[{status_label}] {filename}"
+                item = QListWidgetItem(display_text)
+                item.setData(Qt.ItemDataRole.UserRole, filename)
+                
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                item.setCheckState(Qt.CheckState.Checked)
+                self.file_list.addItem(item)
                     
-                    # 在界面上展示：[状态] 文件路径
-                    display_text = f"[{status_label}] {filename}"
-                    item = QListWidgetItem(display_text)
-                    item.setData(Qt.ItemDataRole.UserRole, filename) # 存储纯净的相对路径
-                    
-                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-                    item.setCheckState(Qt.CheckState.Checked) # 默认选中
-                    self.file_list.addItem(item)
+            self.build_tree({f: s for f, s in file_entries})
                     
             # 扫描结束后更新统计
             self.update_count_label()
@@ -285,6 +375,36 @@ class GitCopyTool(QWidget):
             # 静默处理或打印错误
             print(f"扫描 Git 失败: {e}")
             self.update_count_label()
+
+    def build_tree(self, tree_data):
+        self.file_tree.clear()
+        
+        for filepath, status_label in tree_data.items():
+            parts = filepath.replace("\\", "/").split("/")
+            
+            parent = self.file_tree.invisibleRootItem()
+            
+            for i, part in enumerate(parts[:-1]):
+                found = None
+                for j in range(parent.childCount()):
+                    if parent.child(j).text(0) == part:
+                        found = parent.child(j)
+                        break
+                
+                if found is None:
+                    found = QTreeWidgetItem(parent, [part, ""])
+                    found.setFlags(found.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                    found.setCheckState(0, Qt.CheckState.Checked)
+                    parent = found
+                else:
+                    parent = found
+            
+            file_item = QTreeWidgetItem(parent, [parts[-1], status_label])
+            file_item.setData(0, Qt.ItemDataRole.UserRole, filepath)
+            file_item.setFlags(file_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            file_item.setCheckState(0, Qt.CheckState.Checked)
+        
+        self.file_tree.expandAll()
 
     def get_status_label(self, status):
         """将 git status --porcelain 的状态码转换为友好的中文标签"""
@@ -332,11 +452,31 @@ class GitCopyTool(QWidget):
         menu.addAction(action_select_all)
         menu.addAction(action_deselect_all)
         
-        menu.exec(self.file_list.mapToGlobal(pos))
+        menu.exec(self.file_list.mapToGlobal(pos) if self.stacked_widget.currentIndex() == 0 else self.file_tree.mapToGlobal(pos))
 
     def set_all_checked(self, state):
-        for i in range(self.file_list.count()):
-            self.file_list.item(i).setCheckState(state)
+        if self.stacked_widget.currentIndex() == 0:
+            for i in range(self.file_list.count()):
+                self.file_list.item(i).setCheckState(state)
+        else:
+            self.set_tree_checked(self.file_tree.invisibleRootItem(), state)
+
+    def set_tree_checked(self, parent, state):
+        for i in range(parent.childCount()):
+            item = parent.child(i)
+            item.setCheckState(0, state)
+            self.set_tree_checked(item, state)
+
+    def collect_tree_checked(self, parent, selected_files):
+        for i in range(parent.childCount()):
+            item = parent.child(i)
+            if item.childCount() == 0:
+                if item.checkState(0) == Qt.CheckState.Checked:
+                    rel_path = item.data(0, Qt.ItemDataRole.UserRole)
+                    if rel_path:
+                        selected_files.append(rel_path)
+            else:
+                self.collect_tree_checked(item, selected_files)
 
     def start_copy(self):
         src_dir = self.src_input.currentText().strip()
@@ -352,11 +492,14 @@ class GitCopyTool(QWidget):
 
         # 收集被选中的文件相对路径
         selected_files = []
-        for i in range(self.file_list.count()):
-            item = self.file_list.item(i)
-            if item.checkState() == Qt.CheckState.Checked:
-                rel_path = item.data(Qt.ItemDataRole.UserRole)
-                selected_files.append(rel_path)
+        if self.stacked_widget.currentIndex() == 0:
+            for i in range(self.file_list.count()):
+                item = self.file_list.item(i)
+                if item.checkState() == Qt.CheckState.Checked:
+                    rel_path = item.data(Qt.ItemDataRole.UserRole)
+                    selected_files.append(rel_path)
+        else:
+            self.collect_tree_checked(self.file_tree.invisibleRootItem(), selected_files)
 
         if not selected_files:
             QMessageBox.information(self, "提示", "没有选中任何文件。")
