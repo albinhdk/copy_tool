@@ -3,11 +3,14 @@ from PySide6.QtWidgets import QListWidget, QListWidgetItem, QMenu
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
 from ..models.file_item import FileItem
+from ..config import LIST_VIEW_STYLE, CONTEXT_MENU_STYLE
+
 
 class FileListView(QListWidget):
     """文件列表视图组件"""
     
     selection_changed = Signal()  # 选择变化信号
+    file_double_clicked = Signal(str)  # 文件双击信号，传递文件路径
     
     def __init__(self, parent=None):
         """初始化文件列表视图"""
@@ -15,29 +18,12 @@ class FileListView(QListWidget):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_context_menu)
         self.itemChanged.connect(self._on_item_changed)
+        self.itemDoubleClicked.connect(self._on_item_double_clicked)
         self._setup_style()
     
     def _setup_style(self):
         """设置样式"""
-        self.setStyleSheet("""
-            QListWidget {
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                padding: 8px;
-                background-color: #ffffff;
-            }
-            QListWidget::item {
-                padding: 6px;
-                border-radius: 4px;
-            }
-            QListWidget::item:hover {
-                background-color: #f3f4f6;
-            }
-            QListWidget::item:selected {
-                background-color: #e5e7eb;
-                color: #111827;
-            }
-        """)
+        self.setStyleSheet(LIST_VIEW_STYLE)
     
     def load_files(self, files: List[FileItem]):
         """
@@ -87,24 +73,16 @@ class FileListView(QListWidget):
         """项状态变化处理"""
         self.selection_changed.emit()
     
+    def _on_item_double_clicked(self, item: QListWidgetItem):
+        """处理双击事件"""
+        file_path = item.data(Qt.ItemDataRole.UserRole)
+        if file_path:
+            self.file_double_clicked.emit(file_path)
+    
     def _show_context_menu(self, pos):
         """显示右键菜单"""
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #ffffff;
-                border: 1px solid #d1d5db;
-                border-radius: 4px;
-                padding: 4px;
-            }
-            QMenu::item {
-                padding: 6px 24px;
-                border-radius: 4px;
-            }
-            QMenu::item:selected {
-                background-color: #f3f4f6;
-            }
-        """)
+        menu.setStyleSheet(CONTEXT_MENU_STYLE)
         
         select_all = QAction("全选", self)
         select_all.triggered.connect(lambda: self.set_all_checked(True))

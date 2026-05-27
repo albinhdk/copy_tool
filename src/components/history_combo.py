@@ -1,5 +1,7 @@
 from typing import List
 from PySide6.QtWidgets import QComboBox
+from ..config import MAX_HISTORY_ITEMS
+
 
 class HistoryComboBox(QComboBox):
     """带历史记录的下拉框组件"""
@@ -31,16 +33,19 @@ class HistoryComboBox(QComboBox):
         self.setCurrentText("")
         self.blockSignals(False)
     
-    def add_to_history(self, path: str, max_items: int = 10):
+    def add_to_history(self, path: str, max_items: int = None):
         """
         添加路径到历史记录
         
         Args:
             path: 要添加的路径
-            max_items: 最大记录数量
+            max_items: 最大记录数量，默认使用配置常量
         """
         if not path:
             return
+        
+        if max_items is None:
+            max_items = MAX_HISTORY_ITEMS
         
         # 获取当前所有项
         history = [self.itemText(i) for i in range(self.count())]

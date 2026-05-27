@@ -1,4 +1,4 @@
-Write-Host "开始编译为可执行程序..." -ForegroundColor Cyan
+﻿Write-Host "开始编译为可执行程序..." -ForegroundColor Cyan
 
 # 确保在虚拟环境中安装了 pyinstaller
 if (-Not (Get-Command pyinstaller -ErrorAction SilentlyContinue)) {
@@ -12,7 +12,7 @@ if (-Not (Get-Command pyinstaller -ErrorAction SilentlyContinue)) {
 # --clean: 清理之前的缓存
 # --windowed: 明确指定为窗口程序
 Write-Host "执行 PyInstaller 打包..." -ForegroundColor Yellow
-pyinstaller --noconsole --onefile --windowed --clean --name "Git改动提取工具" main.py
+pyinstaller --noconsole --onefile --windowed --clean --name "GitCopyTool" main.py
 
 Write-Host "`n编译完成！" -ForegroundColor Green
-Write-Host "你的可执行文件在: .\dist\Git改动提取工具.exe" -ForegroundColor Green
+Write-Host "你的可执行文件在: .\dist\GitCopyTool.exe" -ForegroundColor Green

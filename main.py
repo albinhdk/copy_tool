@@ -10,6 +10,7 @@ from src.controllers.main_controller import MainController
 from src.services.git_service import GitService
 from src.services.file_service import FileService
 from src.services.config_service import ConfigService
+from src.config import APP_NAME, APP_COMPANY
 
 def main():
     """应用主入口"""
@@ -28,7 +29,7 @@ def main():
     app.setPalette(palette)
     
     # 初始化服务
-    settings = QSettings("MyCompany", "GitCopyTool")
+    settings = QSettings(APP_COMPANY, APP_NAME)
     git_service = GitService()
     file_service = FileService()
     config_service = ConfigService(settings)
