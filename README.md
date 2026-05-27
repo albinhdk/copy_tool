@@ -47,7 +47,44 @@
 
 - **语言**: Python 3
 - **GUI 框架**: PySide6 (Qt for Python)
+- **测试框架**: pytest
 - **其他依赖**: Git (依赖系统的 `git` 命令行)
+
+## 📁 项目结构
+
+```
+copy_tool/
+├── src/
+│   ├── models/           # 数据模型层
+│   │   ├── file_item.py      # 文件项模型
+│   │   └── git_status.py     # Git状态模型
+│   ├── views/            # 视图层
+│   │   ├── main_window.py    # 主窗口视图
+│   │   ├── file_list_view.py # 文件列表视图
+│   │   └── file_tree_view.py # 文件树视图
+│   ├── controllers/      # 控制器层
+│   │   └── main_controller.py # 主控制器
+│   ├── services/         # 服务层
+│   │   ├── git_service.py    # Git操作服务
+│   │   ├── file_service.py   # 文件操作服务
+│   │   └── config_service.py # 配置管理服务
+│   └── components/       # 可复用UI组件
+│       └── history_combo.py  # 历史记录下拉框
+├── tests/                # 单元测试
+├── main.py              # 应用入口
+├── requirements.txt     # 依赖列表
+└── README.md
+```
+
+## 🧪 运行测试
+
+```bash
+# 运行所有测试
+pytest tests/ -v
+
+# 运行特定测试文件
+pytest tests/test_git_service.py -v
+```
 
 ## 📄 许可
 
