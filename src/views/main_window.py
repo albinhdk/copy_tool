@@ -103,6 +103,13 @@ class MainWindow(QWidget):
         self.tree_view_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.tree_view_btn.clicked.connect(lambda: self._switch_view(1))
         
+        # 排序按钮
+        self.sort_by_status_btn = QPushButton("按类型排序")
+        self.sort_by_status_btn.setCheckable(True)
+        self.sort_by_status_btn.setFixedSize(80, 24)
+        self.sort_by_status_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.sort_by_status_btn.clicked.connect(self._on_sort_by_status_clicked)
+        
         # 刷新按钮
         self.refresh_btn = QPushButton("刷新")
         self.refresh_btn.setFixedSize(60, 24)
@@ -117,6 +124,7 @@ class MainWindow(QWidget):
         list_header_layout.addStretch()
         list_header_layout.addWidget(self.list_view_btn)
         list_header_layout.addWidget(self.tree_view_btn)
+        list_header_layout.addWidget(self.sort_by_status_btn)
         list_header_layout.addWidget(self.refresh_btn)
         list_header_layout.addWidget(self.count_label)
         
@@ -225,6 +233,14 @@ class MainWindow(QWidget):
         self.list_view_btn.setChecked(index == 0)
         self.tree_view_btn.setChecked(index == 1)
         self._update_count_label()
+    
+    def _on_sort_by_status_clicked(self):
+        """处理按类型排序按钮点击"""
+        enabled = self.sort_by_status_btn.isChecked()
+        self.file_list_view.set_sort_by_status(enabled)
+        self.file_tree_view.set_sort_by_status(enabled)
+        # 重新加载文件列表以应用排序
+        self._apply_filter(self.filter_input.text())
     
     def _update_count_label(self):
         """更新统计标签"""

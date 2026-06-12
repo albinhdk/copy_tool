@@ -24,6 +24,10 @@ class FileTreeView(QTreeWidget):
         self.itemChanged.connect(self._on_item_changed)
         self.itemDoubleClicked.connect(self._on_item_double_clicked)
         self._setup_style()
+        
+        # 排序状态
+        self._sort_by_status = False
+        self._status_order = ['已修改', '已添加', '已删除', '已重命名', '已复制', '未跟踪', '已忽略']
     
     def _setup_style(self):
         """设置样式"""
@@ -40,6 +44,10 @@ class FileTreeView(QTreeWidget):
         """
         self.blockSignals(True)
         self.clear()
+        
+        # 根据排序设置对文件进行排序
+        if self._sort_by_status:
+            files = self._sort_files_by_status(files)
         
         # 路径缓存：key=路径元组, value=QTreeWidgetItem
         node_cache: Dict[Tuple[str, ...], QTreeWidgetItem] = {}
@@ -70,6 +78,33 @@ class FileTreeView(QTreeWidget):
         self.expandAll()
         self.blockSignals(False)
         self.selection_changed.emit()
+    
+    def _sort_files_by_status(self, files: List[FileItem]) -> List[FileItem]:
+        """
+        按状态对文件进行排序
+        
+        Args:
+            files: 文件项列表
+            
+        Returns:
+            排序后的文件项列表
+        """
+        def get_status_order(file_item: FileItem) -> int:
+            try:
+                return self._status_order.index(file_item.status)
+            except ValueError:
+                return len(self._status_order)  # 未知状态排在最后
+        
+        return sorted(files, key=get_status_order)
+    
+    def set_sort_by_status(self, enabled: bool):
+        """
+        设置是否按状态排序
+        
+        Args:
+            enabled: 是否启用按状态排序
+        """
+        self._sort_by_status = enabled
     
     def get_selected_files(self) -> List[str]:
         """获取选中的文件路径列表"""
