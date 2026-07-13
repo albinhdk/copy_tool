@@ -26,6 +26,7 @@ def mock_view():
     view.get_source_path = Mock(return_value="")
     view.get_target_path = Mock(return_value="")
     view.get_selected_files = Mock(return_value=[])
+    view.get_structure_root = Mock(return_value="")
     view.set_source_history = Mock()
     view.set_target_history = Mock()
     view.add_source_to_history = Mock()
@@ -33,10 +34,13 @@ def mock_view():
     view.load_files = Mock()
     view.set_loading = Mock()
     view.set_copy_button_enabled = Mock()
+    view.copy_directory_to_clipboard = Mock()
     view.show_message = Mock()
     view.show_question = Mock(return_value=True)
     view.set_source_path = Mock()
     view.set_target_path = Mock()
+    view.set_structure_root_options = Mock()
+    view.add_structure_root_option = Mock()
     return view
 
 
@@ -117,6 +121,7 @@ def test_on_copy_requested_no_source(controller, mock_view):
 def test_on_copy_requested_no_target(controller, mock_view):
     """测试拷贝请求时目标目录为空"""
     with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(os.path.join(tmpdir, ".git"))
         mock_view.get_source_path.return_value = tmpdir
         mock_view.get_target_path.return_value = ""
         
@@ -129,6 +134,7 @@ def test_on_copy_requested_no_target(controller, mock_view):
 def test_on_copy_requested_no_files_selected(controller, mock_view):
     """测试拷贝请求时没有选中文件"""
     with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(os.path.join(tmpdir, ".git"))
         mock_view.get_source_path.return_value = tmpdir
         mock_view.get_target_path.return_value = "/target/path"
         mock_view.get_selected_files.return_value = []
@@ -137,6 +143,78 @@ def test_on_copy_requested_no_files_selected(controller, mock_view):
         
         mock_view.show_message.assert_called_once()
         assert "没有选中" in mock_view.show_message.call_args[0][1]
+
+
+def test_scan_finished_populates_detected_structure_roots(controller, mock_view):
+    """测试扫描完成后提供自动识别的目录结构起点。"""
+    result = GitStatus(
+        "C:/work/java-app",
+        [FileItem("src/main/java/com/demo/App.java", "已修改")],
+    )
+
+    controller._on_scan_finished(result)
+
+    mock_view.set_structure_root_options.assert_called_once()
+    candidates, auto_root, selected_root = mock_view.set_structure_root_options.call_args[0]
+    assert "src/main/java" in candidates
+    assert auto_root == "src/main/java"
+    assert selected_root is None
+
+
+def test_copy_collision_is_reported_before_target_is_cleared(controller, mock_view):
+    """测试路径冲突在清理目标目录前终止。"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repo_dir = os.path.join(tmpdir, "repo")
+        target_dir = os.path.join(tmpdir, "target")
+        os.makedirs(os.path.join(repo_dir, ".git"))
+        os.makedirs(target_dir)
+        with open(os.path.join(target_dir, "keep.txt"), "w") as f:
+            f.write("keep")
+
+        mock_view.get_source_path.return_value = repo_dir
+        mock_view.get_target_path.return_value = target_dir
+        mock_view.get_structure_root.return_value = "src"
+        mock_view.get_selected_files.return_value = [
+            "src/config/app.yml",
+            "config/app.yml",
+        ]
+
+        controller._on_copy_requested()
+
+        assert os.path.exists(os.path.join(target_dir, "keep.txt"))
+        assert "冲突" in mock_view.show_message.call_args[0][0]
+
+
+def test_copy_to_clipboard_requested_starts_copy_with_clipboard_flag(controller):
+    """测试“拷贝到内存”会复用拷贝流程并携带剪贴板标记。"""
+    with patch.object(controller, '_on_copy_requested') as mock_copy:
+        controller._on_copy_to_clipboard_requested()
+
+    mock_copy.assert_called_once_with(copy_to_clipboard=True)
+
+
+def test_copy_finished_places_target_directory_on_clipboard(controller, mock_view):
+    """测试拷贝完全成功后将目标目录放入剪贴板并提示路径。"""
+    target_dir = os.path.normpath("C:/target/copied-files")
+    controller._pending_tgt_dir = target_dir
+    controller._copy_target_to_clipboard = True
+
+    controller._on_copy_finished(3, [])
+
+    mock_view.copy_directory_to_clipboard.assert_called_once_with(target_dir)
+    message = mock_view.show_message.call_args[0][1]
+    assert target_dir in message
+    assert "可直接粘贴" in message
+
+
+def test_copy_finished_with_errors_does_not_update_clipboard(controller, mock_view):
+    """测试存在文件拷贝错误时不把不完整目录放入剪贴板。"""
+    controller._pending_tgt_dir = os.path.normpath("C:/target/copied-files")
+    controller._copy_target_to_clipboard = True
+
+    controller._on_copy_finished(2, ["failed.txt"])
+
+    mock_view.copy_directory_to_clipboard.assert_not_called()
 
 
 # ========== 浏览目录测试 ==========

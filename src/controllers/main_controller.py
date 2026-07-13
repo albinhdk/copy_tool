@@ -35,6 +35,8 @@ class MainController:
         self._scan_worker = None
         self._copy_worker = None
         self._pending_tgt_dir = None
+        self._copy_target_to_clipboard = False
+        self._pending_structure_root = ''
         
         # 防抖定时器
         self._scan_timer = QTimer()
@@ -51,10 +53,15 @@ class MainController:
         self.view.source_changed.connect(self._on_source_changed)
         self.view.scan_requested.connect(self._on_scan_requested)
         self.view.copy_requested.connect(self._on_copy_requested)
+        self.view.copy_to_clipboard_requested.connect(self._on_copy_to_clipboard_requested)
         self.view.browse_source_requested.connect(self._on_browse_source)
         self.view.browse_target_requested.connect(self._on_browse_target)
+        self.view.open_target_folder_requested.connect(self._on_open_target_folder)
+        self.view.structure_root_changed.connect(self._on_structure_root_changed)
+        self.view.browse_structure_root_requested.connect(self._on_browse_structure_root)
         self.view.filter_history_changed.connect(self._on_filter_history_changed)
         self.view.file_double_clicked.connect(self._on_file_double_clicked)
+        self.view.window_activated.connect(self._on_window_activated)
     
     def _load_history(self):
         """加载历史记录"""
@@ -74,6 +81,8 @@ class MainController:
         if path and os.path.isdir(path):
             # 重置防抖定时器
             self._scan_timer.start(SCAN_DEBOUNCE_MS)
+        else:
+            self.view.set_branch("")
     
     def _do_scan(self):
         """执行扫描（防抖后）"""
@@ -86,6 +95,15 @@ class MainController:
         path = self.view.get_source_path()
         if path:
             self._scan_repository(path)
+    
+    def _on_window_activated(self):
+        """窗口激活时自动刷新（如果源目录有效）"""
+        path = self.view.get_source_path()
+        if path and os.path.isdir(path):
+            # 检查是否是有效的 Git 仓库
+            git_dir = os.path.join(path, ".git")
+            if os.path.exists(git_dir):
+                self._scan_repository(path)
     
     def _scan_repository(self, repo_path: str):
         """异步扫描Git仓库"""
@@ -105,19 +123,30 @@ class MainController:
     
     def _on_scan_finished(self, result):
         """扫描完成回调"""
-        self.view.set_loading(False)
-        
-        if result is None:
-            # 扫描失败（错误已在_on_scan_error中处理）
-            return
-        
-        # 更新视图
-        self.view.load_files(result.files)
-        
-        # 保存历史记录
-        repo_path = result.repo_path
-        self.config_service.save_source_history(repo_path)
-        self.view.add_source_to_history(repo_path)
+        try:
+            self.view.set_loading(False)
+            
+            if result is None:
+                # 扫描失败（错误已在_on_scan_error中处理）
+                return
+            
+            # 更新视图
+            self.view.load_files(result.files)
+            self.view.set_branch(result.branch)
+
+            file_paths = [item.relative_path for item in result.files]
+            candidates = self.file_service.get_structure_root_candidates(file_paths)
+            auto_root = self.file_service.detect_structure_root(file_paths)
+            saved_root = self.config_service.get_structure_root(result.repo_path)
+            self.view.set_structure_root_options(candidates, auto_root, saved_root)
+            
+            # 保存历史记录
+            repo_path = result.repo_path
+            self.config_service.save_source_history(repo_path)
+            self.view.add_source_to_history(repo_path)
+        except Exception as e:
+            logger.exception(f"更新扫描结果时发生错误: {e}")
+            self.view.set_loading(False)
     
     def _on_scan_error(self, error_msg: str):
         """扫描出错回调"""
@@ -125,7 +154,11 @@ class MainController:
         self.view.set_loading(False)
         self.view.show_message("扫描失败", error_msg, QMessageBox.Icon.Warning)
     
-    def _on_copy_requested(self):
+    def _on_copy_to_clipboard_requested(self):
+        """处理拷贝并将目标目录放入系统剪贴板的请求。"""
+        self._on_copy_requested(copy_to_clipboard=True)
+
+    def _on_copy_requested(self, copy_to_clipboard: bool = False):
         """处理拷贝请求"""
         src_dir = self.view.get_source_path()
         tgt_dir = self.view.get_target_path()
@@ -133,6 +166,12 @@ class MainController:
         # 验证路径
         if not src_dir or not os.path.exists(src_dir):
             self.view.show_message("错误", "源目录无效或不存在！", QMessageBox.Icon.Warning)
+            return
+        
+        # 检查是否是有效的 Git 仓库
+        git_dir = os.path.join(src_dir, ".git")
+        if not os.path.exists(git_dir):
+            self.view.show_message("错误", "源目录不是有效的Git仓库！", QMessageBox.Icon.Warning)
             return
         
         if not tgt_dir:
@@ -145,29 +184,49 @@ class MainController:
         if not selected_files:
             self.view.show_message("提示", "没有选中任何文件。", QMessageBox.Icon.Information)
             return
+
+        structure_root = self.view.get_structure_root()
+        collisions = self.file_service.find_output_collisions(
+            selected_files, structure_root
+        )
+        if collisions:
+            self.view.show_message(
+                "目录结构冲突",
+                "无法生成补丁目录：\n\n" + "\n".join(collisions[:5]),
+                QMessageBox.Icon.Warning,
+            )
+            return
         
         logger.info(f"用户请求拷贝: {len(selected_files)} 个文件")
         
-        # 确认清空目标目录
-        if os.path.exists(tgt_dir) and os.listdir(tgt_dir):
-            if not self.view.show_question(
-                "清空目标目录确认",
-                f"将要清空目标目录:\n{tgt_dir}\n\n里面现有的所有文件都会被永久删除！是否继续？"
-            ):
-                logger.info("用户取消拷贝操作")
-                return
+        try:
+            # 确认清空目标目录
+            if os.path.exists(tgt_dir) and os.listdir(tgt_dir):
+                if not self.view.show_question(
+                    "清空目标目录确认",
+                    f"将要清空目标目录:\n{tgt_dir}\n\n里面现有的所有文件都会被永久删除！是否继续？"
+                ):
+                    logger.info("用户取消拷贝操作")
+                    return
+                
+                try:
+                    self.file_service.clear_directory(tgt_dir)
+                except Exception as e:
+                    logger.error(f"清空目标目录失败: {e}")
+                    self.view.show_message("清空失败", f"清空目标目录时发生错误:\n{str(e)}", QMessageBox.Icon.Critical)
+                    return
             
-            try:
-                self.file_service.clear_directory(tgt_dir)
-            except Exception as e:
-                logger.error(f"清空目标目录失败: {e}")
-                self.view.show_message("清空失败", f"清空目标目录时发生错误:\n{str(e)}", QMessageBox.Icon.Critical)
-                return
-        
-        # 异步执行拷贝
-        self._start_copy(src_dir, tgt_dir, selected_files)
+            # 异步执行拷贝
+            self.config_service.save_structure_root(src_dir, structure_root)
+            self._start_copy(
+                src_dir, tgt_dir, selected_files, copy_to_clipboard, structure_root
+            )
+        except Exception as e:
+            logger.exception(f"拷贝操作发生错误: {e}")
+            self.view.show_message("错误", f"拷贝操作发生错误:\n{str(e)}", QMessageBox.Icon.Critical)
     
-    def _start_copy(self, src_dir: str, tgt_dir: str, files: list):
+    def _start_copy(self, src_dir: str, tgt_dir: str, files: list,
+                    copy_to_clipboard: bool = False, structure_root: str = ''):
         """异步执行文件拷贝"""
         # 如果已有拷贝任务在运行，先等待完成
         if self._copy_worker and self._copy_worker.isRunning():
@@ -180,9 +239,13 @@ class MainController:
         
         # 保存目标路径用于后续使用
         self._pending_tgt_dir = tgt_dir
+        self._copy_target_to_clipboard = copy_to_clipboard
+        self._pending_structure_root = structure_root
         
         # 创建并启动工作线程
-        self._copy_worker = CopyWorker(self.file_service, src_dir, tgt_dir, files)
+        self._copy_worker = CopyWorker(
+            self.file_service, src_dir, tgt_dir, files, structure_root
+        )
         self._copy_worker.finished.connect(self._on_copy_finished)
         self._copy_worker.error.connect(self._on_copy_error)
         self._copy_worker.start()
@@ -206,7 +269,35 @@ class MainController:
             self.view.show_message("完成，但有错误", f"成功拷贝 {success_count} 个文件。\n\n部分失败:\n{error_str}", QMessageBox.Icon.Warning)
         else:
             logger.info(f"拷贝成功: {success_count} 个文件")
-            self.view.show_message("成功", f"成功拷贝了 {success_count} 个文件！\n\n已保持原始目录结构存放在:\n{tgt_dir}", QMessageBox.Icon.Information)
+            structure_description = self._pending_structure_root or "仓库根目录"
+            if self._copy_target_to_clipboard:
+                try:
+                    self.view.copy_directory_to_clipboard(tgt_dir)
+                    logger.info(f"目标目录内容已放入剪贴板: {tgt_dir}")
+                    self.view.show_message(
+                        "成功",
+                        f"成功拷贝了 {success_count} 个文件！\n\n"
+                        f"结构起点：{structure_description}\n"
+                        f"文件已拷贝到内存，可直接粘贴（不含目标目录本身）\n\n"
+                        f"拷贝路径：{tgt_dir}",
+                        QMessageBox.Icon.Information
+                    )
+                except Exception as e:
+                    logger.exception(f"将目标目录放入剪贴板失败: {e}")
+                    self.view.show_message(
+                        "拷贝完成，但写入剪贴板失败",
+                        f"文件已成功存放在:\n{tgt_dir}\n\n"
+                        f"无法将该目录放入剪贴板:\n{str(e)}",
+                        QMessageBox.Icon.Warning
+                    )
+            else:
+                self.view.show_message(
+                    "成功",
+                    f"成功拷贝了 {success_count} 个文件！\n\n"
+                    f"结构起点：{structure_description}\n"
+                    f"已存放在：\n{tgt_dir}",
+                    QMessageBox.Icon.Information,
+                )
     
     def _on_copy_error(self, error_msg: str):
         """拷贝出错回调"""
@@ -228,6 +319,53 @@ class MainController:
         if dir_path:
             self.view.set_target_path(dir_path)
             logger.debug(f"用户选择目标目录: {dir_path}")
+
+    def _on_structure_root_changed(self, structure_root: str):
+        """保存当前仓库的目录结构起点。"""
+        repo_path = self.view.get_source_path()
+        if repo_path:
+            self.config_service.save_structure_root(repo_path, structure_root)
+
+    def _on_browse_structure_root(self):
+        """手动选择仓库内的目录结构起点。"""
+        repo_path = self.view.get_source_path()
+        if not repo_path or not os.path.isdir(repo_path):
+            self.view.show_message("提示", "请先选择有效的 Git 源目录", QMessageBox.Icon.Information)
+            return
+
+        dir_path = QFileDialog.getExistingDirectory(
+            self.view, "选择目录结构起点", repo_path
+        )
+        if not dir_path:
+            return
+
+        try:
+            if os.path.commonpath([os.path.abspath(repo_path), os.path.abspath(dir_path)]) != os.path.abspath(repo_path):
+                raise ValueError("目录结构起点必须位于当前 Git 仓库内")
+            structure_root = os.path.relpath(dir_path, repo_path)
+            if structure_root == '.':
+                structure_root = ''
+            else:
+                structure_root = structure_root.replace('\\', '/')
+            self.view.add_structure_root_option(structure_root)
+            self.config_service.save_structure_root(repo_path, structure_root)
+        except ValueError as e:
+            self.view.show_message("选择无效", str(e), QMessageBox.Icon.Warning)
+    
+    def _on_open_target_folder(self):
+        """打开目标目录"""
+        tgt_dir = self.view.get_target_path()
+        if not tgt_dir:
+            self.view.show_message("提示", "请先选择目标目录", QMessageBox.Icon.Information)
+            return
+        if not os.path.isdir(tgt_dir):
+            self.view.show_message("提示", "目标目录不存在，请先执行拷贝操作", QMessageBox.Icon.Information)
+            return
+        try:
+            os.startfile(tgt_dir)
+        except Exception as e:
+            logger.error(f"打开目录失败: {e}")
+            self.view.show_message("错误", f"无法打开目录:\n{str(e)}", QMessageBox.Icon.Warning)
     
     def _on_filter_history_changed(self, history: List[str]):
         """处理过滤历史变化"""
@@ -244,16 +382,25 @@ class MainController:
             self.view.show_message("提示", "请先选择Git源目录", QMessageBox.Icon.Information)
             return
         
-        logger.info(f"用户双击查看文件差异: {file_path}")
-        
-        # 获取差异
-        diff_content, error = self.git_service.get_file_diff(repo_path, file_path)
-        
-        if error:
-            logger.error(f"获取文件差异失败: {error}")
-            self.view.show_message("获取差异失败", error, QMessageBox.Icon.Warning)
+        # 检查仓库是否仍然有效
+        if not os.path.isdir(repo_path) or not os.path.exists(os.path.join(repo_path, ".git")):
+            self.view.show_message("错误", "Git仓库不存在或已移动", QMessageBox.Icon.Warning)
             return
         
-        # 显示差异对话框
-        dialog = DiffViewerDialog(file_path, diff_content, self.view)
-        dialog.exec()
+        logger.info(f"用户双击查看文件差异: {file_path}")
+        
+        try:
+            # 获取差异
+            diff_content, error = self.git_service.get_file_diff(repo_path, file_path)
+            
+            if error:
+                logger.error(f"获取文件差异失败: {error}")
+                self.view.show_message("获取差异失败", error, QMessageBox.Icon.Warning)
+                return
+            
+            # 显示差异对话框
+            dialog = DiffViewerDialog(file_path, diff_content, self.view)
+            dialog.exec()
+        except Exception as e:
+            logger.exception(f"查看文件差异时发生错误: {e}")
+            self.view.show_message("错误", f"查看差异时发生错误:\n{str(e)}", QMessageBox.Icon.Critical)

@@ -4,16 +4,18 @@ from .file_item import FileItem
 class GitStatus:
     """Git状态模型，封装仓库的文件状态信息"""
     
-    def __init__(self, repo_path: str, files: List[FileItem]):
+    def __init__(self, repo_path: str, files: List[FileItem], branch: str = ""):
         """
         初始化Git状态
         
         Args:
             repo_path: 仓库根目录路径
             files: 文件项列表
+            branch: 当前分支名
         """
         self.repo_path = repo_path
         self.files = files
+        self.branch = branch
     
     def get_selected_files(self) -> List[str]:
         """获取所有选中的文件路径列表"""

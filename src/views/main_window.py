@@ -1,9 +1,9 @@
 from typing import List
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QStackedWidget, QToolButton, QMessageBox, QLineEdit, QComboBox
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QMimeData, Qt, QUrl, Signal
 from PySide6.QtGui import QAction
 from ..components.history_combo import HistoryComboBox
 from ..models.file_item import FileItem
@@ -23,10 +23,15 @@ class MainWindow(QWidget):
     target_changed = Signal(str)  # 目标目录变化
     scan_requested = Signal()     # 请求扫描
     copy_requested = Signal()     # 请求拷贝
+    copy_to_clipboard_requested = Signal()  # 请求拷贝后将目标目录放入剪贴板
     browse_source_requested = Signal()  # 请求浏览源目录
     browse_target_requested = Signal()  # 请求浏览目标目录
+    open_target_folder_requested = Signal()  # 请求打开目标目录
+    structure_root_changed = Signal(str)  # 目录结构起点变化
+    browse_structure_root_requested = Signal()  # 请求手动选择目录结构起点
     filter_history_changed = Signal(list)  # 过滤历史变化
     file_double_clicked = Signal(str)  # 文件双击信号，传递文件路径
+    window_activated = Signal()   # 窗口激活信号
     
     def __init__(self, parent=None):
         """初始化主窗口"""
@@ -76,9 +81,18 @@ class MainWindow(QWidget):
         src_btn.setFixedHeight(32)
         src_btn.clicked.connect(self.browse_source_requested.emit)
         
+        # 当前分支显示
+        self.branch_label = QLabel("")
+        self.branch_label.setStyleSheet(
+            "color: #0067c0; font-weight: bold; padding: 2px 8px;"
+            "border: 1px solid #0067c0; border-radius: 4px;"
+        )
+        self.branch_label.hide()
+        
         src_layout.addWidget(src_label)
         src_layout.addWidget(self.src_input)
         src_layout.addWidget(src_btn)
+        src_layout.addWidget(self.branch_label)
         parent_layout.addLayout(src_layout)
     
     def _setup_file_list_section(self, parent_layout: QVBoxLayout):
@@ -205,19 +219,62 @@ class MainWindow(QWidget):
         tgt_btn.setFixedHeight(32)
         tgt_btn.clicked.connect(self.browse_target_requested.emit)
         
+        # 打开目标目录按钮
+        self.open_folder_btn = QPushButton("打开文件夹")
+        self.open_folder_btn.setFixedHeight(32)
+        self.open_folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.open_folder_btn.clicked.connect(self.open_target_folder_requested.emit)
+        
         tgt_layout.addWidget(tgt_label)
         tgt_layout.addWidget(self.tgt_input)
         tgt_layout.addWidget(tgt_btn)
+        tgt_layout.addWidget(self.open_folder_btn)
         parent_layout.addLayout(tgt_layout)
+
+        root_layout = QHBoxLayout()
+        root_layout.setSpacing(12)
+
+        root_label = QLabel("结构起点:")
+        root_label.setMinimumWidth(80)
+
+        self.structure_root_combo = QComboBox()
+        self.structure_root_combo.setFixedHeight(32)
+        self.structure_root_combo.setToolTip(
+            "起点内的文件会裁掉该目录前缀；起点外的文件保持仓库相对路径"
+        )
+        self.structure_root_combo.currentIndexChanged.connect(
+            self._emit_structure_root_changed
+        )
+
+        self.structure_root_btn = QPushButton("选择目录...")
+        self.structure_root_btn.setFixedHeight(32)
+        self.structure_root_btn.clicked.connect(self.browse_structure_root_requested.emit)
+
+        root_layout.addWidget(root_label)
+        root_layout.addWidget(self.structure_root_combo)
+        root_layout.addWidget(self.structure_root_btn)
+        parent_layout.addLayout(root_layout)
     
     def _setup_action_buttons(self, parent_layout: QVBoxLayout):
         """设置操作按钮区"""
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(12)
+
         self.copy_btn = QPushButton("开始拷贝")
         self.copy_btn.setFixedHeight(40)
         self.copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.copy_btn.setStyleSheet(MAIN_BUTTON_STYLE)
         self.copy_btn.clicked.connect(self.copy_requested.emit)
-        parent_layout.addWidget(self.copy_btn)
+
+        self.copy_to_clipboard_btn = QPushButton("拷贝到内存")
+        self.copy_to_clipboard_btn.setFixedHeight(40)
+        self.copy_to_clipboard_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.copy_to_clipboard_btn.setToolTip("先拷贝到目标目录，再将该目录放入剪贴板")
+        self.copy_to_clipboard_btn.clicked.connect(self.copy_to_clipboard_requested.emit)
+
+        button_layout.addWidget(self.copy_btn)
+        button_layout.addWidget(self.copy_to_clipboard_btn)
+        parent_layout.addLayout(button_layout)
     
     def _setup_status_bar(self, parent_layout: QVBoxLayout):
         """设置状态栏（加载提示）"""
@@ -233,6 +290,10 @@ class MainWindow(QWidget):
         self.list_view_btn.setChecked(index == 0)
         self.tree_view_btn.setChecked(index == 1)
         self._update_count_label()
+
+    def _emit_structure_root_changed(self):
+        """发送当前目录结构起点。"""
+        self.structure_root_changed.emit(self.get_structure_root())
     
     def _on_sort_by_status_clicked(self):
         """处理按类型排序按钮点击"""
@@ -264,15 +325,18 @@ class MainWindow(QWidget):
         """保存当前过滤文本到历史记录"""
         text = self.filter_input.text().strip()
         if text:
+            self.filter_history_combo.blockSignals(True)
             # 检查是否已存在
             index = self.filter_history_combo.findText(text)
             if index >= 0:
                 # 移到最前
                 self.filter_history_combo.removeItem(index)
             self.filter_history_combo.insertItem(0, text)
+            self.filter_history_combo.setCurrentText(text)
             # 限制历史记录数量
             while self.filter_history_combo.count() > MAX_HISTORY_ITEMS:
                 self.filter_history_combo.removeItem(self.filter_history_combo.count() - 1)
+            self.filter_history_combo.blockSignals(False)
             
             # 发送历史变化信号
             history = [self.filter_history_combo.itemText(i) for i in range(self.filter_history_combo.count())]
@@ -311,9 +375,58 @@ class MainWindow(QWidget):
         """设置源目录路径"""
         self.src_input.setCurrentText(path)
     
+    def set_branch(self, branch: str):
+        """设置当前分支显示"""
+        if branch:
+            self.branch_label.setText(f" {branch} ")
+            self.branch_label.show()
+        else:
+            self.branch_label.hide()
+    
     def get_target_path(self) -> str:
         """获取目标目录路径"""
         return self.tgt_input.currentText().strip()
+
+    def get_structure_root(self) -> str:
+        """获取相对于 Git 仓库的目录结构起点。"""
+        value = self.structure_root_combo.currentData()
+        return str(value) if value is not None else ""
+
+    def set_structure_root_options(self, candidates: List[str], auto_root: str,
+                                   selected_root=None):
+        """刷新自动识别和可选的目录结构起点。"""
+        self.structure_root_combo.blockSignals(True)
+        self.structure_root_combo.clear()
+
+        auto_label = f"自动识别：{auto_root or '仓库根目录'}"
+        self.structure_root_combo.addItem(auto_label, auto_root)
+        self.structure_root_combo.addItem("仓库根目录（不裁剪）", "")
+
+        for root in candidates:
+            if root != auto_root:
+                self.structure_root_combo.addItem(root, root)
+
+        target_root = auto_root if selected_root is None else selected_root
+        target_index = -1
+        for index in range(self.structure_root_combo.count()):
+            if self.structure_root_combo.itemData(index) == target_root:
+                target_index = index
+                break
+        if target_index < 0:
+            self.structure_root_combo.addItem(f"已保存：{target_root}", target_root)
+            target_index = self.structure_root_combo.count() - 1
+
+        self.structure_root_combo.setCurrentIndex(target_index)
+        self.structure_root_combo.blockSignals(False)
+
+    def add_structure_root_option(self, structure_root: str):
+        """添加并选择手动指定的目录结构起点。"""
+        for index in range(self.structure_root_combo.count()):
+            if self.structure_root_combo.itemData(index) == structure_root:
+                self.structure_root_combo.setCurrentIndex(index)
+                return
+        self.structure_root_combo.addItem(f"手动选择：{structure_root}", structure_root)
+        self.structure_root_combo.setCurrentIndex(self.structure_root_combo.count() - 1)
     
     def set_target_path(self, path: str):
         """设置目标目录路径"""
@@ -353,17 +466,35 @@ class MainWindow(QWidget):
             self.status_label.setText(message)
             self.status_label.show()
             self.copy_btn.setEnabled(False)
+            self.copy_to_clipboard_btn.setEnabled(False)
             self.refresh_btn.setEnabled(False)
             self.src_input.setEnabled(False)
+            self.structure_root_combo.setEnabled(False)
+            self.structure_root_btn.setEnabled(False)
         else:
             self.status_label.hide()
             self.copy_btn.setEnabled(True)
+            self.copy_to_clipboard_btn.setEnabled(True)
             self.refresh_btn.setEnabled(True)
             self.src_input.setEnabled(True)
+            self.structure_root_combo.setEnabled(True)
+            self.structure_root_btn.setEnabled(True)
     
     def set_copy_button_enabled(self, enabled: bool):
         """设置拷贝按钮启用状态"""
         self.copy_btn.setEnabled(enabled)
+        self.copy_to_clipboard_btn.setEnabled(enabled)
+
+    def copy_directory_to_clipboard(self, directory: str):
+        """将目录内容（而非目录本身）作为可粘贴的文件对象放入系统剪贴板。"""
+        import os
+        mime_data = QMimeData()
+        urls = []
+        if os.path.isdir(directory):
+            for item in os.listdir(directory):
+                urls.append(QUrl.fromLocalFile(os.path.join(directory, item)))
+        mime_data.setUrls(urls)
+        QApplication.clipboard().setMimeData(mime_data)
     
     def show_message(self, title: str, message: str, icon: QMessageBox.Icon = QMessageBox.Icon.Information):
         """显示消息对话框"""
@@ -377,3 +508,11 @@ class MainWindow(QWidget):
             QMessageBox.StandardButton.No
         )
         return reply == QMessageBox.StandardButton.Yes
+    
+    def changeEvent(self, event):
+        """窗口状态变化事件"""
+        if event.type() == event.Type.WindowStateChange:
+            # 窗口从最小化恢复或从后台切换到前台时触发刷新
+            if self.windowState() == Qt.WindowState.WindowNoState:
+                self.window_activated.emit()
+        super().changeEvent(event)

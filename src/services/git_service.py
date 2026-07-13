@@ -76,8 +76,11 @@ class GitService:
             # 按路径排序
             files.sort(key=lambda x: x.relative_path)
             
-            logger.info(f"扫描完成: 发现 {len(files)} 个变更文件")
-            return GitStatus(repo_path, files), None
+            # 获取当前分支
+            branch = self.get_current_branch(repo_path)
+            
+            logger.info(f"扫描完成: 发现 {len(files)} 个变更文件, 当前分支: {branch}")
+            return GitStatus(repo_path, files, branch), None
             
         except FileNotFoundError:
             logger.error("Git命令未找到，请确保已安装Git")
@@ -194,3 +197,28 @@ class GitService:
             return None, f"Git命令执行失败: {error_msg}"
         except Exception as e:
             return None, f"获取差异时发生错误: {str(e)}"
+    
+    def get_current_branch(self, repo_path: str) -> str:
+        """
+        获取当前分支名
+        
+        Args:
+            repo_path: 仓库根目录路径
+            
+        Returns:
+            当前分支名，获取失败时返回空字符串
+        """
+        try:
+            creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            result = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                stdin=subprocess.DEVNULL,
+                creationflags=creationflags
+            )
+            return result.stdout.strip() if result.returncode == 0 else ""
+        except Exception:
+            return ""

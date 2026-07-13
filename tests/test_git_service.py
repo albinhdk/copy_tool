@@ -136,3 +136,35 @@ def test_scan_repository_with_modified_file():
         assert len(result.files) == 1
         assert result.files[0].relative_path == "test.txt"
         assert result.files[0].status == "已修改"
+
+# ========== get_current_branch测试 ==========
+
+def test_get_current_branch_invalid_path():
+    """测试获取无效路径的分支返回空字符串"""
+    service = GitService()
+    assert service.get_current_branch("/nonexistent/path") == ""
+
+def test_get_current_branch_with_commit():
+    """测试有提交的仓库获取当前分支"""
+    service = GitService()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init", "-b", "main"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "commit", "--allow-empty", "-m", "init"], cwd=tmpdir, capture_output=True)
+        
+        assert service.get_current_branch(tmpdir) == "main"
+
+def test_scan_repository_populates_branch():
+    """测试扫描仓库时填充分支信息"""
+    service = GitService()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run(["git", "init", "-b", "develop"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=tmpdir, capture_output=True)
+        subprocess.run(["git", "commit", "--allow-empty", "-m", "init"], cwd=tmpdir, capture_output=True)
+        
+        result, error = service.scan_repository(tmpdir)
+        assert error is None
+        assert result is not None
+        assert result.branch == "develop"

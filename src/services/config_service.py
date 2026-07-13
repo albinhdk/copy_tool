@@ -1,4 +1,6 @@
-from typing import List
+import hashlib
+import os
+from typing import List, Optional
 from PySide6.QtCore import QSettings
 from ..config import MAX_HISTORY_ITEMS
 
@@ -56,6 +58,31 @@ class ConfigService:
             max_items: 最大记录数量，默认使用配置常量
         """
         self._save_history("filter_history", text, max_items)
+
+    @staticmethod
+    def _repository_key(repo_path: str) -> str:
+        """为仓库路径生成稳定且适用于 QSettings 的键。"""
+        normalized = os.path.normcase(os.path.abspath(repo_path))
+        return hashlib.sha256(normalized.encode('utf-8')).hexdigest()
+
+    def get_structure_root(self, repo_path: str) -> Optional[str]:
+        """获取指定仓库手动保存的目录结构起点。"""
+        if not repo_path:
+            return None
+        value = self.settings.value(
+            f"structure_roots/{self._repository_key(repo_path)}",
+            None,
+        )
+        return None if value is None else str(value)
+
+    def save_structure_root(self, repo_path: str, structure_root: str):
+        """按仓库保存目录结构起点，空字符串表示仓库根目录。"""
+        if not repo_path:
+            return
+        self.settings.setValue(
+            f"structure_roots/{self._repository_key(repo_path)}",
+            structure_root,
+        )
     
     def _get_history(self, key: str) -> List[str]:
         """

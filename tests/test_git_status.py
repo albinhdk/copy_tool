@@ -47,3 +47,13 @@ def test_git_status_empty_files():
     status = GitStatus("/repo", [])
     assert status.get_selected_files() == []
     assert status.get_statistics() == {"total": 0, "selected": 0}
+
+def test_git_status_default_branch():
+    """测试默认分支名为空字符串"""
+    status = GitStatus("/repo", [])
+    assert status.branch == ""
+
+def test_git_status_with_branch():
+    """测试指定分支名"""
+    status = GitStatus("/repo", [], "main")
+    assert status.branch == "main"

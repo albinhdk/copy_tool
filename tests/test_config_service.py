@@ -125,3 +125,17 @@ def test_custom_max_items(config_service):
     history = config_service.get_source_history()
     assert len(history) == 3
     assert history[0] == "/repo/4"
+
+
+def test_structure_root_is_saved_per_repository(config_service):
+    """不同仓库分别保存目录结构起点。"""
+    config_service.save_structure_root("C:/work/vue-app", "src")
+    config_service.save_structure_root("C:/work/java-app", "src/main/java")
+
+    assert config_service.get_structure_root("C:/work/vue-app") == "src"
+    assert config_service.get_structure_root("C:/work/java-app") == "src/main/java"
+
+
+def test_structure_root_returns_none_when_not_configured(config_service):
+    """未手动选择时返回 None，以便控制器采用自动识别。"""
+    assert config_service.get_structure_root("C:/work/new-app") is None
