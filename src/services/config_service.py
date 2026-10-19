@@ -35,6 +35,24 @@ class ConfigService:
         """获取目标目录历史记录"""
         return self._get_history("tgt_history")
     
+    def replace_source_history(self, history: List[str]):
+        """
+        整体重写源目录历史记录（用于下拉框中删除/清空条目后同步）
+        
+        Args:
+            history: 完整的历史记录列表
+        """
+        self._replace_history("src_history", history)
+    
+    def replace_target_history(self, history: List[str]):
+        """
+        整体重写目标目录历史记录（用于下拉框中删除/清空条目后同步）
+        
+        Args:
+            history: 完整的历史记录列表
+        """
+        self._replace_history("tgt_history", history)
+    
     def save_target_history(self, path: str, max_items: int = None):
         """
         保存目标目录到历史记录
@@ -127,3 +145,13 @@ class ConfigService:
         history = history[:max_items]
         
         self.settings.setValue(key, history)
+    
+    def _replace_history(self, key: str, history: List[str]):
+        """
+        整体重写历史记录的通用方法
+        
+        Args:
+            key: 设置项的键名
+            history: 完整的历史记录列表
+        """
+        self.settings.setValue(key, [str(h) for h in history])

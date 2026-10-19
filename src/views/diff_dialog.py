@@ -1,9 +1,9 @@
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QTextEdit, QPushButton, 
-    QHBoxLayout, QLabel
+    QDialog, QVBoxLayout, QTextEdit, QPushButton,
+    QHBoxLayout, QLabel, QApplication
 )
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QColor, QSyntaxHighlighter, QTextCharFormat
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QFont, QColor, QSyntaxHighlighter, QTextCharFormat, QKeySequence, QShortcut
 import re
 from ..config import DIFF_DIALOG_STYLE
 
@@ -48,7 +48,7 @@ class DiffHighlighter(QSyntaxHighlighter):
 
 
 class DiffViewerDialog(QDialog):
-    """差异查看对话框"""
+    """差异查看对话框，使用标准窗口标题栏（最小化/最大化/关闭）"""
     
     def __init__(self, file_path: str, diff_content: str, parent=None):
         """
@@ -60,10 +60,14 @@ class DiffViewerDialog(QDialog):
             parent: 父窗口
         """
         super().__init__(parent)
+        # 使用标准窗口样式，右上角自带最小化/最大化/关闭按钮
+        self.setWindowFlags(Qt.WindowType.Window)
         self.setWindowTitle(f"文件差异 - {file_path}")
         self.setMinimumSize(700, 500)
         self.resize(900, 600)
+        self._diff_content = diff_content
         self._setup_ui(file_path, diff_content)
+        self._setup_shortcuts()
     
     def _setup_ui(self, file_path: str, diff_content: str):
         """设置UI"""
@@ -74,6 +78,7 @@ class DiffViewerDialog(QDialog):
         # 文件路径标签
         path_label = QLabel(f"文件: {file_path}")
         path_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        path_label.setWordWrap(True)
         layout.addWidget(path_label)
         
         # 差异内容显示
@@ -85,14 +90,34 @@ class DiffViewerDialog(QDialog):
         # 应用语法高亮
         self.highlighter = DiffHighlighter(self.diff_text.document())
         
-        layout.addWidget(self.diff_text)
+        layout.addWidget(self.diff_text, 1)
         
-        # 关闭按钮
+        # 按钮区
         button_layout = QHBoxLayout()
+        button_layout.setSpacing(8)
+        
+        # 左侧：辅助按钮
+        self.copy_btn = QPushButton("复制差异")
+        self.copy_btn.setProperty("secondary", True)
+        self.copy_btn.setFixedWidth(90)
+        self.copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.copy_btn.clicked.connect(self._copy_diff)
+        button_layout.addWidget(self.copy_btn)
+        
+        self.wrap_btn = QPushButton("自动换行")
+        self.wrap_btn.setProperty("secondary", True)
+        self.wrap_btn.setCheckable(True)
+        self.wrap_btn.setFixedWidth(90)
+        self.wrap_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.wrap_btn.clicked.connect(self._toggle_wrap)
+        button_layout.addWidget(self.wrap_btn)
+        
         button_layout.addStretch()
         
+        # 右侧：关闭
         close_btn = QPushButton("关闭")
         close_btn.setFixedWidth(80)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.clicked.connect(self.accept)
         button_layout.addWidget(close_btn)
         
@@ -100,3 +125,27 @@ class DiffViewerDialog(QDialog):
         
         # 应用样式
         self.setStyleSheet(DIFF_DIALOG_STYLE)
+    
+    def _setup_shortcuts(self):
+        """设置键盘快捷键"""
+        # Escape 关闭对话框
+        QShortcut(QKeySequence("Escape"), self, activated=self.accept)
+        # Ctrl+Shift+C 复制差异
+        QShortcut(QKeySequence("Ctrl+Shift+C"), self, activated=self._copy_diff)
+    
+    def _copy_diff(self):
+        """复制差异内容到剪贴板"""
+        clipboard = QApplication.clipboard()
+        clipboard.setText(self._diff_content)
+        # 临时改变按钮文本提供反馈
+        original_text = self.copy_btn.text()
+        self.copy_btn.setText("已复制!")
+        QApplication.processEvents()
+        QTimer.singleShot(1500, lambda: self.copy_btn.setText(original_text))
+    
+    def _toggle_wrap(self):
+        """切换自动换行"""
+        if self.wrap_btn.isChecked():
+            self.diff_text.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        else:
+            self.diff_text.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)

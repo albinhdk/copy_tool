@@ -1,7 +1,7 @@
 from typing import List
 from PySide6.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QStackedWidget, QToolButton, QMessageBox, QLineEdit, QComboBox
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
+    QPushButton, QStackedWidget, QToolButton, QMessageBox, QLineEdit, QComboBox
 )
 from PySide6.QtCore import QMimeData, Qt, QUrl, Signal
 from PySide6.QtGui import QAction
@@ -9,6 +9,7 @@ from ..components.history_combo import HistoryComboBox
 from ..models.file_item import FileItem
 from .file_list_view import FileListView
 from .file_tree_view import FileTreeView
+from .status_badge_bar import StatusBadgeBar
 from ..config import (
     DEFAULT_WINDOW_SIZE, MIN_WINDOW_SIZE, MAIN_BUTTON_STYLE,
     STATUS_LABEL_STYLE, MAX_HISTORY_ITEMS
@@ -30,6 +31,8 @@ class MainWindow(QWidget):
     structure_root_changed = Signal(str)  # 目录结构起点变化
     browse_structure_root_requested = Signal()  # 请求手动选择目录结构起点
     filter_history_changed = Signal(list)  # 过滤历史变化
+    source_history_changed = Signal(list)  # 源目录历史变化（下拉框中删除/清空）
+    target_history_changed = Signal(list)  # 目标目录历史变化（下拉框中删除/清空）
     file_double_clicked = Signal(str)  # 文件双击信号，传递文件路径
     window_activated = Signal()   # 窗口激活信号
     
@@ -66,6 +69,8 @@ class MainWindow(QWidget):
         # 连接信号
         self.src_input.currentTextChanged.connect(self.source_changed.emit)
         self.tgt_input.currentTextChanged.connect(self.target_changed.emit)
+        self.src_input.history_changed.connect(self.source_history_changed.emit)
+        self.tgt_input.history_changed.connect(self.target_history_changed.emit)
     
     def _setup_source_section(self, parent_layout: QVBoxLayout):
         """设置源目录选择区"""
@@ -99,7 +104,7 @@ class MainWindow(QWidget):
         """设置文件列表区"""
         # 第一行：标题和视图切换
         list_header_layout = QHBoxLayout()
-        list_label = QLabel("已改动的文件 (右键菜单可全选/反选):")
+        list_label = QLabel("文件:")
         
         # 视图切换按钮
         self.list_view_btn = QToolButton()
@@ -130,9 +135,10 @@ class MainWindow(QWidget):
         self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.refresh_btn.clicked.connect(self.scan_requested.emit)
         
-        # 统计标签
-        self.count_label = QLabel("已选: 0 / 0")
-        self.count_label.setStyleSheet("color: #6b7280; font-weight: bold;")
+        # 统计徽章（按类型显示已选数量）
+        self.stats_bar = StatusBadgeBar()
+        self.stats_bar.set_counts({}, 0, 0)
+        self.count_label = self.stats_bar  # 兼容旧接口
         
         list_header_layout.addWidget(list_label)
         list_header_layout.addStretch()
@@ -140,7 +146,8 @@ class MainWindow(QWidget):
         list_header_layout.addWidget(self.tree_view_btn)
         list_header_layout.addWidget(self.sort_by_status_btn)
         list_header_layout.addWidget(self.refresh_btn)
-        list_header_layout.addWidget(self.count_label)
+        list_header_layout.addSpacing(8)
+        list_header_layout.addWidget(self.stats_bar)
         
         parent_layout.addLayout(list_header_layout)
         
@@ -198,6 +205,7 @@ class MainWindow(QWidget):
         # 连接选择变化信号
         self.file_list_view.selection_changed.connect(self._update_count_label)
         self.file_tree_view.selection_changed.connect(self._update_count_label)
+        self.file_list_view.time_sort_activated.connect(self._on_time_sort_activated)
         
         # 连接双击信号
         self.file_list_view.file_double_clicked.connect(self.file_double_clicked.emit)
@@ -206,36 +214,35 @@ class MainWindow(QWidget):
         parent_layout.addWidget(self.stacked_widget)
     
     def _setup_target_section(self, parent_layout: QVBoxLayout):
-        """设置目标目录选择区"""
-        tgt_layout = QHBoxLayout()
-        tgt_layout.setSpacing(12)
-        
+        """设置目标目录选择区（目标目录 + 结构起点，使用网格布局对齐）"""
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(8)
+
+        # --- Row 0: 目标目录 ---
         tgt_label = QLabel("目标目录:")
-        tgt_label.setMinimumWidth(80)
-        
+
         self.tgt_input = HistoryComboBox("请选择要拷贝到的目标文件夹...")
-        
+
         tgt_btn = QPushButton("浏览...")
         tgt_btn.setFixedHeight(32)
+        tgt_btn.setFixedWidth(90)
+        tgt_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         tgt_btn.clicked.connect(self.browse_target_requested.emit)
-        
-        # 打开目标目录按钮
+
         self.open_folder_btn = QPushButton("打开文件夹")
         self.open_folder_btn.setFixedHeight(32)
+        self.open_folder_btn.setFixedWidth(90)
         self.open_folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.open_folder_btn.clicked.connect(self.open_target_folder_requested.emit)
-        
-        tgt_layout.addWidget(tgt_label)
-        tgt_layout.addWidget(self.tgt_input)
-        tgt_layout.addWidget(tgt_btn)
-        tgt_layout.addWidget(self.open_folder_btn)
-        parent_layout.addLayout(tgt_layout)
 
-        root_layout = QHBoxLayout()
-        root_layout.setSpacing(12)
+        grid.addWidget(tgt_label, 0, 0)
+        grid.addWidget(self.tgt_input, 0, 1)
+        grid.addWidget(tgt_btn, 0, 2)
+        grid.addWidget(self.open_folder_btn, 0, 3)
 
+        # --- Row 1: 结构起点 ---
         root_label = QLabel("结构起点:")
-        root_label.setMinimumWidth(80)
 
         self.structure_root_combo = QComboBox()
         self.structure_root_combo.setFixedHeight(32)
@@ -248,12 +255,19 @@ class MainWindow(QWidget):
 
         self.structure_root_btn = QPushButton("选择目录...")
         self.structure_root_btn.setFixedHeight(32)
+        self.structure_root_btn.setFixedWidth(90)
+        self.structure_root_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.structure_root_btn.clicked.connect(self.browse_structure_root_requested.emit)
 
-        root_layout.addWidget(root_label)
-        root_layout.addWidget(self.structure_root_combo)
-        root_layout.addWidget(self.structure_root_btn)
-        parent_layout.addLayout(root_layout)
+        grid.addWidget(root_label, 1, 0)
+        grid.addWidget(self.structure_root_combo, 1, 1)
+        grid.addWidget(self.structure_root_btn, 1, 2)
+
+        # 列属性：标签列固定宽度，下拉框列拉伸填充
+        grid.setColumnMinimumWidth(0, 80)
+        grid.setColumnStretch(1, 1)
+
+        parent_layout.addLayout(grid)
     
     def _setup_action_buttons(self, parent_layout: QVBoxLayout):
         """设置操作按钮区"""
@@ -302,15 +316,24 @@ class MainWindow(QWidget):
         self.file_tree_view.set_sort_by_status(enabled)
         # 重新加载文件列表以应用排序
         self._apply_filter(self.filter_input.text())
-    
+
+    def _on_time_sort_activated(self):
+        """按时间排序时关闭互斥的按类型排序状态。"""
+        self.sort_by_status_btn.setChecked(False)
+        self.file_tree_view.set_sort_by_status(False)
+
     def _update_count_label(self):
-        """更新统计标签"""
+        """更新统计徽章（总计 + 按类型列出已选数量）"""
         if self.stacked_widget.currentIndex() == 0:
             stats = self.file_list_view.get_statistics()
         else:
             stats = self.file_tree_view.get_statistics()
-        
-        self.count_label.setText(f"已选: {stats['selected']} / {stats['total']}")
+
+        self.stats_bar.set_counts(
+            stats.get("by_status", {}),
+            stats.get("selected", 0),
+            stats.get("total", 0),
+        )
     
     def _set_filter(self, text: str):
         """设置过滤文本"""

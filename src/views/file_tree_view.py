@@ -3,7 +3,7 @@ from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QMenu
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
 from ..models.file_item import FileItem
-from ..config import TREE_VIEW_STYLE, CONTEXT_MENU_STYLE
+from ..config import TREE_VIEW_STYLE, CONTEXT_MENU_STYLE, STATUS_ORDER
 
 
 class FileTreeView(QTreeWidget):
@@ -27,7 +27,7 @@ class FileTreeView(QTreeWidget):
         
         # 排序状态
         self._sort_by_status = False
-        self._status_order = ['已修改', '已添加', '已删除', '已重命名', '已复制', '未跟踪', '已忽略']
+        self._status_order = list(STATUS_ORDER)
     
     def _setup_style(self):
         """设置样式"""
@@ -125,9 +125,22 @@ class FileTreeView(QTreeWidget):
                 self._collect_checked(item, selected)
     
     def get_statistics(self) -> dict:
-        """获取统计信息"""
+        """获取统计信息（含按类型的已选数量）"""
         total, selected = self._count_items(self.invisibleRootItem())
-        return {"total": total, "selected": selected}
+        by_status: Dict[str, int] = {}
+        self._collect_statistics(self.invisibleRootItem(), by_status)
+        return {"total": total, "selected": selected, "by_status": by_status}
+
+    def _collect_statistics(self, parent: QTreeWidgetItem, by_status: Dict[str, int]):
+        """递归统计已选文件在各状态上的数量"""
+        for i in range(parent.childCount()):
+            item = parent.child(i)
+            if item.childCount() == 0:  # 叶子节点（文件）
+                if item.checkState(0) == Qt.CheckState.Checked:
+                    status = item.text(1) or ""
+                    by_status[status] = by_status.get(status, 0) + 1
+            else:
+                self._collect_statistics(item, by_status)
     
     def _count_items(self, parent: QTreeWidgetItem) -> tuple:
         """递归统计文件数量"""

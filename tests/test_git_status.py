@@ -41,12 +41,13 @@ def test_git_status_get_statistics():
     stats = status.get_statistics()
     assert stats["total"] == 3
     assert stats["selected"] == 2
+    assert stats["by_status"] == {"已修改": 1, "未跟踪": 1}
 
 def test_git_status_empty_files():
     """测试空文件列表"""
     status = GitStatus("/repo", [])
     assert status.get_selected_files() == []
-    assert status.get_statistics() == {"total": 0, "selected": 0}
+    assert status.get_statistics() == {"total": 0, "selected": 0, "by_status": {}}
 
 def test_git_status_default_branch():
     """测试默认分支名为空字符串"""

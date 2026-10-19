@@ -1,6 +1,7 @@
 import pytest
 import sys
 from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
 from src.models.file_item import FileItem
 from src.views.file_list_view import FileListView
 from src.views.file_tree_view import FileTreeView
@@ -47,6 +48,34 @@ def test_file_list_view_sort_by_status(qapp):
     assert view.item(2).text() == "[已添加] file2.py"
     assert view.item(3).text() == "[已删除] file3.py"
     assert view.item(4).text() == "[未跟踪] file4.py"
+
+
+def test_file_list_view_displays_and_sorts_by_modified_time(qapp):
+    """最后修改时间列支持降序、升序，并保留勾选状态。"""
+    files = [
+        FileItem("old.py", "已修改", modified_time=100.0),
+        FileItem("deleted.py", "已删除"),
+        FileItem("new.py", "已添加", modified_time=300.0),
+    ]
+    view = FileListView()
+    view.load_files(files)
+    view.item(0).setCheckState(0, Qt.CheckState.Unchecked)
+
+    assert view.headerItem().text(1) == "最后修改时间"
+    assert view.item(1).text(1) == "—"
+
+    view.header().sectionClicked.emit(1)
+    assert [
+        view.item(index).data(0, Qt.ItemDataRole.UserRole)
+        for index in range(view.count())
+    ] == ["new.py", "old.py", "deleted.py"]
+    assert view.get_selected_files() == ["new.py", "deleted.py"]
+
+    view.header().sectionClicked.emit(1)
+    assert [
+        view.item(index).data(0, Qt.ItemDataRole.UserRole)
+        for index in range(view.count())
+    ] == ["old.py", "new.py", "deleted.py"]
 
 
 def test_file_tree_view_sort_by_status(qapp):

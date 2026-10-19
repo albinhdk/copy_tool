@@ -79,6 +79,26 @@ def test_load_history_on_init(mock_view, config_service):
     mock_view.set_target_history.assert_called_once()
 
 
+# ========== 目录历史删除/清空持久化测试 ==========
+
+def test_on_source_history_changed_persists(controller, config_service):
+    """测试源目录历史变化后整体重写持久化"""
+    config_service.save_source_history("/old/repo")
+    
+    controller._on_source_history_changed(["/new/repo"])
+    
+    assert config_service.get_source_history() == ["/new/repo"]
+
+
+def test_on_target_history_changed_persists(controller, config_service):
+    """测试目标目录历史变化后整体重写持久化"""
+    config_service.save_target_history("/old/target")
+    
+    controller._on_target_history_changed([])
+    
+    assert config_service.get_target_history() == []
+
+
 # ========== 扫描请求测试 ==========
 
 def test_on_scan_requested_empty_path(controller, mock_view):

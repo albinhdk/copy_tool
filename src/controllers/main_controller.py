@@ -60,6 +60,8 @@ class MainController:
         self.view.structure_root_changed.connect(self._on_structure_root_changed)
         self.view.browse_structure_root_requested.connect(self._on_browse_structure_root)
         self.view.filter_history_changed.connect(self._on_filter_history_changed)
+        self.view.source_history_changed.connect(self._on_source_history_changed)
+        self.view.target_history_changed.connect(self._on_target_history_changed)
         self.view.file_double_clicked.connect(self._on_file_double_clicked)
         self.view.window_activated.connect(self._on_window_activated)
     
@@ -373,6 +375,16 @@ class MainController:
         for text in history:
             self.config_service.save_filter_history(text)
         logger.debug(f"保存过滤历史: {len(history)} 条")
+    
+    def _on_source_history_changed(self, history: List[str]):
+        """处理源目录历史变化（下拉框中删除/清空条目），整体重写持久化"""
+        self.config_service.replace_source_history(history)
+        logger.debug(f"源目录历史已更新: {len(history)} 条")
+    
+    def _on_target_history_changed(self, history: List[str]):
+        """处理目标目录历史变化（下拉框中删除/清空条目），整体重写持久化"""
+        self.config_service.replace_target_history(history)
+        logger.debug(f"目标目录历史已更新: {len(history)} 条")
     
     def _on_file_double_clicked(self, file_path: str):
         """处理文件双击事件，显示差异"""

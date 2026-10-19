@@ -109,6 +109,7 @@ def test_scan_repository_valid_git_repo():
         assert len(result.files) == 1
         assert result.files[0].relative_path == "test.txt"
         assert result.files[0].status == "未跟踪"
+        assert result.files[0].modified_time == pytest.approx(os.path.getmtime(test_file))
 
 def test_scan_repository_with_modified_file():
     """测试扫描包含修改文件的Git仓库"""

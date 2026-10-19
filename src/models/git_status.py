@@ -21,8 +21,12 @@ class GitStatus:
         """获取所有选中的文件路径列表"""
         return [f.relative_path for f in self.files if f.selected]
     
-    def get_statistics(self) -> Dict[str, int]:
-        """获取统计信息"""
+    def get_statistics(self) -> Dict[str, object]:
+        """获取统计信息，by_status 为按类型统计的已选数量"""
         total = len(self.files)
-        selected = sum(1 for f in self.files if f.selected)
-        return {"total": total, "selected": selected}
+        by_status: Dict[str, int] = {}
+        for f in self.files:
+            if f.selected:
+                by_status[f.status] = by_status.get(f.status, 0) + 1
+        selected = sum(by_status.values())
+        return {"total": total, "selected": selected, "by_status": by_status}

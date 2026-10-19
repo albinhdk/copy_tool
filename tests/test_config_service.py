@@ -126,6 +126,52 @@ def test_custom_max_items(config_service):
     assert len(history) == 3
     assert history[0] == "/repo/4"
 
+# ========== 整体重写历史记录测试（删除/清空场景） ==========
+
+def test_replace_source_history(config_service):
+    """测试整体重写源目录历史"""
+    config_service.save_source_history("/repo1")
+    config_service.save_source_history("/repo2")
+    
+    config_service.replace_source_history(["/repo2"])
+    
+    history = config_service.get_source_history()
+    assert history == ["/repo2"]
+
+def test_replace_target_history(config_service):
+    """测试整体重写目标目录历史"""
+    config_service.save_target_history("/target1")
+    config_service.save_target_history("/target2")
+    
+    config_service.replace_target_history(["/target1", "/target3"])
+    
+    history = config_service.get_target_history()
+    assert history == ["/target1", "/target3"]
+
+def test_clear_source_history_via_replace(config_service):
+    """测试清空源目录历史"""
+    config_service.save_source_history("/repo1")
+    
+    config_service.replace_source_history([])
+    
+    assert config_service.get_source_history() == []
+
+def test_clear_target_history_via_replace(config_service):
+    """测试清空目标目录历史"""
+    config_service.save_target_history("/target1")
+    
+    config_service.replace_target_history([])
+    
+    assert config_service.get_target_history() == []
+
+def test_replace_source_then_save_keeps_order(config_service):
+    """测试重写后继续保存，新条目仍在最前"""
+    config_service.replace_source_history(["/repo_old"])
+    config_service.save_source_history("/repo_new")
+    
+    history = config_service.get_source_history()
+    assert history == ["/repo_new", "/repo_old"]
+
 
 def test_structure_root_is_saved_per_repository(config_service):
     """不同仓库分别保存目录结构起点。"""

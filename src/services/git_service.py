@@ -70,7 +70,14 @@ class GitService:
                 if item:
                     # 检查文件是否存在（排除已删除的文件）
                     full_path = os.path.join(repo_path, item.relative_path)
-                    if os.path.isfile(full_path) or 'D' in line[:2]:
+                    file_exists = os.path.isfile(full_path)
+                    if file_exists or 'D' in line[:2]:
+                        if file_exists:
+                            try:
+                                item.modified_time = os.path.getmtime(full_path)
+                            except OSError:
+                                # 文件可能在扫描过程中被删除，保留该条目但不显示时间
+                                item.modified_time = None
                         files.append(item)
             
             # 按路径排序
