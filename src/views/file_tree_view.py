@@ -1,5 +1,5 @@
 from typing import List, Dict, Tuple
-from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QMenu
+from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QMenu, QHeaderView
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
 from ..models.file_item import FileItem
@@ -15,9 +15,18 @@ class FileTreeView(QTreeWidget):
     def __init__(self, parent=None):
         """初始化文件树视图"""
         super().__init__(parent)
-        self.setHeaderLabels(["文件路径", "状态"])
-        self.setColumnCount(2)
-        self.setColumnWidth(0, 400)
+        self.setHeaderLabels(["文件路径", "状态", "最后修改时间"])
+        self.setColumnCount(3)
+
+        header = self.header()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        # 时间列宽度按完整时间戳的文字宽度固定，避免内容被省略号截断
+        self.setColumnWidth(
+            2, self.fontMetrics().horizontalAdvance("0000-00-00 00:00:00") + 24
+        )
         
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_context_menu)
@@ -63,15 +72,20 @@ class FileTreeView(QTreeWidget):
                 if dir_path in node_cache:
                     parent = node_cache[dir_path]
                 else:
-                    found = QTreeWidgetItem(parent, [parts[i], ""])
+                    found = QTreeWidgetItem(parent, [parts[i], "", ""])
                     found.setFlags(found.flags() | Qt.ItemFlag.ItemIsUserCheckable)
                     found.setCheckState(0, Qt.CheckState.Checked if file_item.selected else Qt.CheckState.Unchecked)
                     node_cache[dir_path] = found
                     parent = found
             
             # 创建文件节点
-            file_item_widget = QTreeWidgetItem(parent, [parts[-1], file_item.status])
+            file_item_widget = QTreeWidgetItem(parent, [
+                parts[-1],
+                file_item.status,
+                file_item.get_modified_time_text(),
+            ])
             file_item_widget.setData(0, Qt.ItemDataRole.UserRole, file_item.relative_path)
+            file_item_widget.setData(2, Qt.ItemDataRole.UserRole, file_item.modified_time)
             file_item_widget.setFlags(file_item_widget.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             file_item_widget.setCheckState(0, Qt.CheckState.Checked if file_item.selected else Qt.CheckState.Unchecked)
         

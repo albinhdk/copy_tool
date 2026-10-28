@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 
 class FileItem:
@@ -23,11 +24,13 @@ class FileItem:
         self.status = status
         self.selected = selected
         self.modified_time = modified_time
-    
-    def get_display_text(self) -> str:
-        """获取显示文本，格式为: [状态] 文件路径"""
-        return f"[{self.status}] {self.relative_path}"
-    
+
+    def get_modified_time_text(self) -> str:
+        """获取最后修改时间的显示文本；文件不存在时返回占位符"""
+        if self.modified_time is None:
+            return "—"
+        return datetime.fromtimestamp(self.modified_time).strftime("%Y-%m-%d %H:%M:%S")
+
     def __str__(self) -> str:
         """字符串表示"""
-        return self.get_display_text()
+        return self.relative_path

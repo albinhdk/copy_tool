@@ -18,12 +18,7 @@ def test_file_item_default_selected():
     item = FileItem("test.txt", "未跟踪")
     assert item.selected == True
 
-def test_file_item_display_text():
-    """测试显示文本格式"""
-    item = FileItem("src/main.py", "已修改")
-    assert item.get_display_text() == "[已修改] src/main.py"
-
 def test_file_item_str_representation():
     """测试字符串表示"""
     item = FileItem("test.txt", "已添加")
-    assert str(item) == "[已添加] test.txt"
+    assert str(item) == "test.txt"

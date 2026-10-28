@@ -1,7 +1,7 @@
 from typing import Dict, List, Tuple
 
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QLayout, QSizePolicy, QWidget
 
 from ..config import (
     STATUS_ORDER, STATUS_BADGE_COLORS, DEFAULT_STATUS_BADGE_COLORS,
@@ -65,13 +65,15 @@ class StatusBadgeBar(QWidget):
         """初始化徽章栏。"""
         super().__init__(parent)
         self.setStyleSheet("background: transparent;")
+        # 徽章从左往右紧凑排列，不留内部弹性空间，宽度由内容决定
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self._layout = QHBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(8)
+        self._layout.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
         self._badges: List[_Badge] = []
         self._total_badge = self._create_badge()
         self._layout.addWidget(self._total_badge)
-        self._layout.addStretch(1)
 
     def _create_badge(self) -> _Badge:
         """创建一枚徽章标签。"""
@@ -84,7 +86,7 @@ class StatusBadgeBar(QWidget):
         while len(self._badges) < len(items):
             badge = self._create_badge()
             badge.setVisible(False)
-            self._layout.insertWidget(self._layout.count() - 1, badge)
+            self._layout.addWidget(badge)
             self._badges.append(badge)
 
         for index, badge in enumerate(self._badges):

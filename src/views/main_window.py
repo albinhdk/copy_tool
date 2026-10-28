@@ -142,12 +142,14 @@ class MainWindow(QWidget):
         
         list_header_layout.addWidget(list_label)
         list_header_layout.addStretch()
+        # 统计徽章放在按钮左侧：徽章宽度随数量变化时只挤占左侧空白，
+        # 右侧操作按钮始终紧贴窗口右边缘，位置不会跳动
+        list_header_layout.addWidget(self.stats_bar)
+        list_header_layout.addSpacing(8)
         list_header_layout.addWidget(self.list_view_btn)
         list_header_layout.addWidget(self.tree_view_btn)
         list_header_layout.addWidget(self.sort_by_status_btn)
         list_header_layout.addWidget(self.refresh_btn)
-        list_header_layout.addSpacing(8)
-        list_header_layout.addWidget(self.stats_bar)
         
         parent_layout.addLayout(list_header_layout)
         
@@ -205,7 +207,7 @@ class MainWindow(QWidget):
         # 连接选择变化信号
         self.file_list_view.selection_changed.connect(self._update_count_label)
         self.file_tree_view.selection_changed.connect(self._update_count_label)
-        self.file_list_view.time_sort_activated.connect(self._on_time_sort_activated)
+        self.file_list_view.header_sort_activated.connect(self._on_header_sort_activated)
         
         # 连接双击信号
         self.file_list_view.file_double_clicked.connect(self.file_double_clicked.emit)
@@ -317,10 +319,12 @@ class MainWindow(QWidget):
         # 重新加载文件列表以应用排序
         self._apply_filter(self.filter_input.text())
 
-    def _on_time_sort_activated(self):
-        """按时间排序时关闭互斥的按类型排序状态。"""
-        self.sort_by_status_btn.setChecked(False)
-        self.file_tree_view.set_sort_by_status(False)
+    def _on_header_sort_activated(self, column: int, ascending: bool):
+        """表头排序接管后，同步“按类型排序”按钮与树形视图的排序状态。"""
+        # 列表按状态升序时与按钮语义一致，按钮保持选中；其余情况取消选中
+        status_asc_active = column == 1 and ascending
+        self.sort_by_status_btn.setChecked(status_asc_active)
+        self.file_tree_view.set_sort_by_status(status_asc_active)
 
     def _update_count_label(self):
         """更新统计徽章（总计 + 按类型列出已选数量）"""
