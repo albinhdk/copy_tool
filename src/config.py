@@ -78,6 +78,7 @@ LIST_VIEW_STYLE = """
         color: #374151;
         border: none;
         border-bottom: 1px solid #d1d5db;
+        border-right: 1px solid #e5e7eb;
         padding: 7px 8px;
         font-weight: bold;
     }

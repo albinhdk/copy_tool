@@ -1,8 +1,9 @@
 from typing import List, Optional
 
-from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QMenu, QHeaderView
+from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QMenu
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
+from ..components.column_resize import ResizableColumnsMixin
 from ..models.file_item import FileItem
 from ..config import LIST_VIEW_STYLE, CONTEXT_MENU_STYLE, STATUS_ORDER
 
@@ -14,8 +15,8 @@ class _FileListItem(QTreeWidgetItem):
         return super().text(column)
 
 
-class FileListView(QTreeWidget):
-    """文件列表视图：文件路径、状态、最后修改时间三列均支持点击表头排序。"""
+class FileListView(ResizableColumnsMixin, QTreeWidget):
+    """文件列表视图：文件路径、状态、最后修改时间三列均支持点击表头排序和拖动调整宽度。"""
 
     selection_changed = Signal()
     file_double_clicked = Signal(str)
@@ -40,10 +41,15 @@ class FileListView(QTreeWidget):
         header = self.header()
         header.setSectionsClickable(True)
         header.setSortIndicatorShown(False)
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-        # 时间列宽度按完整时间戳的文字宽度固定，避免内容被省略号截断
+        self._setup_column_resizing()
+        # 状态列按最长状态文字初始化，时间列按完整时间戳的文字宽度初始化
+        self.setColumnWidth(
+            1,
+            max(
+                self.fontMetrics().horizontalAdvance(text)
+                for text in ["状态", *STATUS_ORDER]
+            ) + 32,
+        )
         self.setColumnWidth(
             2, self.fontMetrics().horizontalAdvance("0000-00-00 00:00:00") + 24
         )

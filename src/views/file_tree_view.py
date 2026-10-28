@@ -1,12 +1,13 @@
 from typing import List, Dict, Tuple
-from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QMenu, QHeaderView
+from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QMenu
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
+from ..components.column_resize import ResizableColumnsMixin
 from ..models.file_item import FileItem
 from ..config import TREE_VIEW_STYLE, CONTEXT_MENU_STYLE, STATUS_ORDER
 
 
-class FileTreeView(QTreeWidget):
+class FileTreeView(ResizableColumnsMixin, QTreeWidget):
     """文件树视图组件"""
     
     selection_changed = Signal()  # 选择变化信号
@@ -18,12 +19,15 @@ class FileTreeView(QTreeWidget):
         self.setHeaderLabels(["文件路径", "状态", "最后修改时间"])
         self.setColumnCount(3)
 
-        header = self.header()
-        header.setStretchLastSection(False)
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-        # 时间列宽度按完整时间戳的文字宽度固定，避免内容被省略号截断
+        self._setup_column_resizing()
+        # 状态列按最长状态文字初始化，时间列按完整时间戳的文字宽度初始化
+        self.setColumnWidth(
+            1,
+            max(
+                self.fontMetrics().horizontalAdvance(text)
+                for text in ["状态", *STATUS_ORDER]
+            ) + 32,
+        )
         self.setColumnWidth(
             2, self.fontMetrics().horizontalAdvance("0000-00-00 00:00:00") + 24
         )
